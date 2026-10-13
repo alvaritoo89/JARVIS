@@ -60,8 +60,7 @@ Algunas funciones requieren configuración adicional y no estarán disponibles h
 Clona el repositorio:
 
 ```bash
-git clone https://github.com/TU-USUARIO/TU-REPOSITORIO.git
-cd TU-REPOSITORIO
+git clone https://github.com/alvaritoo89/JARVIS
 ```
 
 Sustituye la URL por la de tu repositorio.
