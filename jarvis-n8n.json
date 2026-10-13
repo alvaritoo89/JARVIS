@@ -1,0 +1,419 @@
+{
+  "name": "JARVIS - Asistente de voz",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "jarvis",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "b0000000-0000-4000-8000-000000000001",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [0, 300],
+      "webhookId": "jarvis-webhook"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "c0000001-0000-4000-8000-000000000001",
+              "leftValue": "={{ $json.headers['x-jarvis-token'] }}",
+              "rightValue": "CAMBIA_ESTE_TOKEN",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "b0000000-0000-4000-8000-000000000002",
+      "name": "¿Token válido?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [220, 300]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { error: 'No autorizado' } }}",
+        "options": {
+          "responseCode": 401
+        }
+      },
+      "id": "b0000000-0000-4000-8000-000000000003",
+      "name": "Responder 401",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [440, 520]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "c0000001-0000-4000-8000-000000000002",
+              "leftValue": "={{ !!$binary.audio }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "b0000000-0000-4000-8000-000000000004",
+      "name": "¿Llega audio?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [440, 300]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const buf = await this.helpers.getBinaryDataBuffer($itemIndex, 'audio');\nlet mime = ($binary.audio.mimeType || 'audio/wav').toLowerCase();\nif (mime.includes('wav')) mime = 'audio/wav';\nelse if (mime.includes('mpeg') || mime.includes('mp3')) mime = 'audio/mp3';\nelse if (mime.includes('ogg')) mime = 'audio/ogg';\nelse if (mime.includes('flac')) mime = 'audio/flac';\nelse if (mime.includes('aac')) mime = 'audio/aac';\nreturn { json: { b64: buf.toString('base64'), mime } };"
+      },
+      "id": "b0000000-0000-4000-8000-000000000005",
+      "name": "Audio a base64",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [660, 180]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googlePalmApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ contents: [{ parts: [{ text: 'Transcribe literalmente lo que se dice en este audio, en su idioma original. Devuelve únicamente la transcripción, sin comentarios ni comillas. Si no hay voz, devuelve una cadena vacía.' }, { inline_data: { mime_type: $json.mime, data: $json.b64 } }] }] }) }}",
+        "options": {
+          "timeout": 60000
+        }
+      },
+      "id": "b0000000-0000-4000-8000-000000000006",
+      "name": "Gemini transcribe voz",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [880, 180],
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 800,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "d0000001-0000-4000-8000-000000000001",
+              "name": "mensaje",
+              "value": "={{ ($json.candidates?.[0]?.content?.parts?.[0]?.text || '').trim() || '(no se ha detectado voz)' }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "b0000000-0000-4000-8000-000000000007",
+      "name": "Entrada por voz",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [1100, 180]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "d0000001-0000-4000-8000-000000000002",
+              "name": "mensaje",
+              "value": "={{ $('Webhook').first().json.body.texto || '(mensaje vacío)' }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "b0000000-0000-4000-8000-000000000008",
+      "name": "Entrada por texto",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [1100, 420]
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $json.mensaje }}",
+        "options": {
+          "systemMessage": "=Eres JARVIS, el asistente personal de voz de name, inspirado en el de Iron Man: educado, eficiente y con un toque sutil de ingenio. Le tratas de tú. Fecha y hora actuales (Madrid): {{ $now.setZone('Europe/Madrid').setLocale('es').toFormat('cccc d LLLL yyyy, HH:mm') }}.\n\nFORMATO DE RESPUESTA (OBLIGATORIO)\nTu respuesta final SIEMPRE es UN ÚNICO objeto JSON válido, sin markdown, sin ```, sin texto fuera del JSON:\n{\"respuesta\":\"lo que se dirá en voz alta\",\"pantalla\":\"texto largo opcional para mostrar por escrito\",\"acciones\":[]}\n- respuesta: 1 a 3 frases cortas, lenguaje natural hablado. Sin emojis, sin markdown, sin URLs ni símbolos raros.\n- pantalla: opcional. Úsalo para borradores de correo, listas largas o datos que no conviene leer en voz alta. Si no hace falta, cadena vacía.\n- acciones: lista (puede ir vacía) de acciones locales que ejecutará el ordenador de name. Tipos permitidos y NINGUNO más:\n  {\"tipo\":\"abrir_web\",\"valor\":\"https://...\"}\n  {\"tipo\":\"buscar_google\",\"valor\":\"consulta\"}\n  {\"tipo\":\"buscar_youtube\",\"valor\":\"consulta\"}\n  {\"tipo\":\"abrir_app\",\"valor\":\"chrome | spotify | vscode | calculadora | bloc de notas | discord | whatsapp | telegram | explorador\"}\n  {\"tipo\":\"abrir_carpeta\",\"valor\":\"descargas | documentos | escritorio | imagenes | videos | musica\"}\n  {\"tipo\":\"salir\"}  (solo si name pide apagarte o se despide)\nPuedes combinar varias acciones en un mismo turno (por ejemplo abrir Spotify y una web).\n\nHERRAMIENTAS\n- enviar_correo (Gmail): solo cuando name ORDENE enviar. Si dice redacta o escribe sin pedir el envío, pon el borrador completo en pantalla, resume en respuesta y pregunta si lo envías. Cuando confirme, envía exactamente ese borrador.\n- leer_correos (Gmail): para consultar la bandeja. Resume lo importante en voz y deja el detalle en pantalla.\n- enviar_telegram: para mandar mensajes. Usa el chat_id del contacto de la lista; si no está en la lista, pregunta, nunca lo inventes.\n- Calculator y Wikipedia para cálculos y datos enciclopédicos.\n\nCONTACTOS (edita esta lista)\n- name (yo): email TU_EMAIL@gmail.com, telegram chat_id TU_CHAT_ID\n- Ejemplo: Mamá: email mama@ejemplo.com, telegram chat_id 123456789\n\nREGLAS\n- Obedece lo que pida name con la máxima eficacia. Si falta un dato imprescindible (destinatario, asunto), pregunta UNA sola cosa corta.\n- Nunca inventes direcciones de correo, chat_id ni datos. Si no sabes algo, dilo.\n- Nunca afirmes que has hecho algo si la herramienta falló: cuéntalo con claridad.\n- No puedes borrar archivos ni ejecutar comandos del sistema. Si te lo piden, explica que no puedes.\n- Si el mensaje es (no se ha detectado voz) o (mensaje vacío), pide amablemente que lo repita.\n- Responde en el idioma en el que te hable name.",
+          "maxIterations": 10
+        }
+      },
+      "id": "b0000000-0000-4000-8000-000000000009",
+      "name": "Agente JARVIS",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 1.7,
+      "position": [1340, 300],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "modelName": "models/gemini-2.5-flash",
+        "options": {
+          "temperature": 0.4
+        }
+      },
+      "id": "b0000000-0000-4000-8000-000000000010",
+      "name": "Gemini (cerebro)",
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1,
+      "position": [1160, 640]
+    },
+    {
+      "parameters": {
+        "sessionIdType": "customKey",
+        "sessionKey": "={{ $('Webhook').first().json.body.sessionId || 'jarvis' }}",
+        "contextWindowLength": 12
+      },
+      "id": "b0000000-0000-4000-8000-000000000011",
+      "name": "Memoria",
+      "type": "@n8n/n8n-nodes-langchain.memoryBufferWindow",
+      "typeVersion": 1.3,
+      "position": [1320, 640]
+    },
+    {
+      "parameters": {
+        "descriptionType": "manual",
+        "toolDescription": "Envía un correo electrónico desde la cuenta de Gmail de name. Úsalo SOLO cuando name ordene enviarlo.",
+        "resource": "message",
+        "operation": "send",
+        "sendTo": "={{ $fromAI('destinatario', 'Dirección de correo del destinatario', 'string') }}",
+        "subject": "={{ $fromAI('asunto', 'Asunto del correo', 'string') }}",
+        "emailType": "text",
+        "message": "={{ $fromAI('cuerpo', 'Cuerpo del correo en texto plano, bien redactado y con saludo y despedida', 'string') }}",
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "id": "b0000000-0000-4000-8000-000000000012",
+      "name": "enviar_correo",
+      "type": "n8n-nodes-base.gmailTool",
+      "typeVersion": 2.1,
+      "position": [1480, 640]
+    },
+    {
+      "parameters": {
+        "descriptionType": "manual",
+        "toolDescription": "Lee correos de la bandeja de Gmail de name. Admite consultas de búsqueda de Gmail como is:unread o from:nombre.",
+        "resource": "message",
+        "operation": "getAll",
+        "returnAll": false,
+        "limit": "={{ $fromAI('cantidad', 'Cuántos correos leer, máximo 10', 'number', 5) }}",
+        "simple": true,
+        "filters": {
+          "q": "={{ $fromAI('busqueda', 'Consulta de búsqueda de Gmail, por ejemplo is:unread o from:alguien', 'string', 'in:inbox') }}"
+        }
+      },
+      "id": "b0000000-0000-4000-8000-000000000013",
+      "name": "leer_correos",
+      "type": "n8n-nodes-base.gmailTool",
+      "typeVersion": 2.1,
+      "position": [1640, 640]
+    },
+    {
+      "parameters": {
+        "descriptionType": "manual",
+        "toolDescription": "Envía un mensaje de Telegram a un contacto usando su chat_id.",
+        "resource": "message",
+        "operation": "sendMessage",
+        "chatId": "={{ $fromAI('chat_id', 'chat_id de Telegram del destinatario, tomado de la lista de contactos', 'string') }}",
+        "text": "={{ $fromAI('texto', 'Texto del mensaje a enviar', 'string') }}",
+        "additionalFields": {
+          "appendAttribution": false
+        }
+      },
+      "id": "b0000000-0000-4000-8000-000000000014",
+      "name": "enviar_telegram",
+      "type": "n8n-nodes-base.telegramTool",
+      "typeVersion": 1.2,
+      "position": [1800, 640]
+    },
+    {
+      "parameters": {},
+      "id": "b0000000-0000-4000-8000-000000000015",
+      "name": "Calculator",
+      "type": "@n8n/n8n-nodes-langchain.toolCalculator",
+      "typeVersion": 1,
+      "position": [1960, 640]
+    },
+    {
+      "parameters": {},
+      "id": "b0000000-0000-4000-8000-000000000016",
+      "name": "Wikipedia",
+      "type": "@n8n/n8n-nodes-langchain.toolWikipedia",
+      "typeVersion": 1,
+      "position": [2100, 640]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const sessionId = ($('Webhook').first().json.body || {}).sessionId || 'jarvis';\nconst raw = String($json.output ?? '').trim();\nlet data = null;\nif (raw) {\n  try { data = JSON.parse(raw); } catch (e) {\n    const m = raw.match(/\\{[\\s\\S]*\\}/);\n    if (m) { try { data = JSON.parse(m[0]); } catch (e2) { data = null; } }\n  }\n}\nif (!data || typeof data !== 'object' || Array.isArray(data)) {\n  data = { respuesta: raw || 'Lo siento, ha ocurrido un error y no he podido procesar eso. Inténtalo de nuevo.', pantalla: '', acciones: [] };\n}\nconst permitidos = ['abrir_web', 'buscar_google', 'buscar_youtube', 'abrir_app', 'abrir_carpeta', 'salir'];\nconst acciones = (Array.isArray(data.acciones) ? data.acciones : [])\n  .filter(a => a && permitidos.includes(a.tipo))\n  .map(a => ({ tipo: a.tipo, valor: a.valor === undefined ? '' : String(a.valor) }));\nconst respuesta = String(data.respuesta || '').trim() || 'Hecho.';\nreturn { json: { respuesta, pantalla: String(data.pantalla || ''), acciones, sessionId } };"
+      },
+      "id": "b0000000-0000-4000-8000-000000000017",
+      "name": "Parsear respuesta",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1640, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.fish.audio/v1/tts",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "model",
+              "value": "s2-pro"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ (() => { const b = { text: $json.respuesta, format: 'mp3' }; const ref = 'PEGA_AQUI_TU_REFERENCE_ID'; if (ref && !ref.startsWith('PEGA_')) b.reference_id = ref; return JSON.stringify(b); })() }}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "file",
+              "outputPropertyName": "audio"
+            }
+          },
+          "timeout": 60000
+        }
+      },
+      "id": "b0000000-0000-4000-8000-000000000018",
+      "name": "Fish Audio voz",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1860, 300],
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 500,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const d = $('Parsear respuesta').item.json;\nlet audio = null;\ntry {\n  if ($binary && $binary.audio) {\n    const buf = await this.helpers.getBinaryDataBuffer($itemIndex, 'audio');\n    if (buf && buf.length > 0) audio = buf.toString('base64');\n  }\n} catch (e) { audio = null; }\nreturn { json: { respuesta: d.respuesta, pantalla: d.pantalla, acciones: d.acciones, sessionId: d.sessionId, audio_base64: audio, formato: 'mp3' } };"
+      },
+      "id": "b0000000-0000-4000-8000-000000000019",
+      "name": "Empaquetar respuesta",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2080, 300]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {}
+      },
+      "id": "b0000000-0000-4000-8000-000000000020",
+      "name": "Responder",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [2300, 300]
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [[{"node": "¿Token válido?", "type": "main", "index": 0}]]
+    },
+    "¿Token válido?": {
+      "main": [
+        [{"node": "¿Llega audio?", "type": "main", "index": 0}],
+        [{"node": "Responder 401", "type": "main", "index": 0}]
+      ]
+    },
+    "¿Llega audio?": {
+      "main": [
+        [{"node": "Audio a base64", "type": "main", "index": 0}],
+        [{"node": "Entrada por texto", "type": "main", "index": 0}]
+      ]
+    },
+    "Audio a base64": {
+      "main": [[{"node": "Gemini transcribe voz", "type": "main", "index": 0}]]
+    },
+    "Gemini transcribe voz": {
+      "main": [[{"node": "Entrada por voz", "type": "main", "index": 0}]]
+    },
+    "Entrada por voz": {
+      "main": [[{"node": "Agente JARVIS", "type": "main", "index": 0}]]
+    },
+    "Entrada por texto": {
+      "main": [[{"node": "Agente JARVIS", "type": "main", "index": 0}]]
+    },
+    "Agente JARVIS": {
+      "main": [[{"node": "Parsear respuesta", "type": "main", "index": 0}]]
+    },
+    "Parsear respuesta": {
+      "main": [[{"node": "Fish Audio voz", "type": "main", "index": 0}]]
+    },
+    "Fish Audio voz": {
+      "main": [[{"node": "Empaquetar respuesta", "type": "main", "index": 0}]]
+    },
+    "Empaquetar respuesta": {
+      "main": [[{"node": "Responder", "type": "main", "index": 0}]]
+    },
+    "Gemini (cerebro)": {
+      "ai_languageModel": [[{"node": "Agente JARVIS", "type": "ai_languageModel", "index": 0}]]
+    },
+    "Memoria": {
+      "ai_memory": [[{"node": "Agente JARVIS", "type": "ai_memory", "index": 0}]]
+    },
+    "enviar_correo": {
+      "ai_tool": [[{"node": "Agente JARVIS", "type": "ai_tool", "index": 0}]]
+    },
+    "leer_correos": {
+      "ai_tool": [[{"node": "Agente JARVIS", "type": "ai_tool", "index": 0}]]
+    },
+    "enviar_telegram": {
+      "ai_tool": [[{"node": "Agente JARVIS", "type": "ai_tool", "index": 0}]]
+    },
+    "Calculator": {
+      "ai_tool": [[{"node": "Agente JARVIS", "type": "ai_tool", "index": 0}]]
+    },
+    "Wikipedia": {
+      "ai_tool": [[{"node": "Agente JARVIS", "type": "ai_tool", "index": 0}]]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}
